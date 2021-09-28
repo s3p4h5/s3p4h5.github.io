@@ -1,0 +1,239 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>大水槽共榮圈</title>
+    <link rel="stylesheet" href="assets/css/style.css"/>
+  <style>
+  body {
+    cursor: none;
+    overflow: hidden;
+  }
+  .gopher {
+    /*background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Go_gopher_mascot_bw.png/768px-Go_gopher_mascot_bw.png');    */
+    width: 120px;
+    height: 32px;
+    background-size: cover;
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+  </style>
+  </head>
+<body>
+<section class="msger">
+  <header class="msger-header">
+      <div class="msger-header-title">
+          <i class="fas fa-comment-alt"></i> 
+          大水槽共榮圈
+      </div>
+      <div class="msger-header-options">
+          <span><i class="fas fa-cog"></i></span>
+      </div>
+  </header>
+  <!--聊天 block-->
+  <div class="msger-chat">
+
+  </div>
+  <!--聊天 block-->
+
+  <div class="msger-inputarea">
+      <input type="text" class="msger-input" id="msg" placeholder="Glub｡･ﾟ･ Glub｡::ﾟ｡">
+      <button type="button" id="send" class="msger-send-btn">吐出泡泡</button>
+  </div>
+</section>
+<!--<script src="assets/js/main.js"></script>-->
+
+<script>
+const fish = Object.freeze({0:"青魚", 1:"白魚", 2:"黑魚", 3:"紅魚"})
+const fishPhotos = [
+    "assets/FISH/0.png",
+    "assets/FISH/1.png",
+    "assets/FISH/2.png",
+    "assets/FISH/3.png"
+]
+const LEFT = "left";
+const RIGHT = "right";
+const EVENT_MESSAGE = "message" //發言
+const EVENT_OTHER = "other"     //通知
+
+var url = "ws://" + window.location.host + "/ws";
+var ws = new WebSocket(url);
+var myid = -1;
+var myfish;
+var fish_id = (Math.floor(Math.random() * 1000) % fishPhotos.length);
+var fish_img;
+var total_id;
+var block_id = new Array();
+var chatroom = document.getElementsByClassName("msger-chat");
+var text = document.getElementById("msg");
+var send = document.getElementById("send");
+
+/* 事件：iam, set, dis
+    iam為連線事件, set為設定位置事件, dis為離線事件
+*/
+/* 也負責更新更新其他client狀態*/
+/* 無事件時待機*/
+ws.onmessage = function (msg) {
+  var cmds = {"iam": iam, "set": set, "dis": dis};
+  //console.log("cmds: "+ cmds +"\n")
+  //供後續cmd取得當前事件對應的事件function，可視為一個function array
+  if (msg.data) {
+    //console.log("msg.data: "+msg.data +"\n") // print iam id
+    var parts = msg.data.split(" ") // "command id ... x y" -> [command, id, x, y]
+    var cmd = cmds[parts[0]];
+    //console.log("cmd: "+cmd)
+    //從cmds裡面取command值，可能是iam(id), set(id, x, y), dis(id), chat()
+
+    if (cmd) {
+      var tmp = parts.slice(1)
+      //將parts中的command去除掉，留下後續的陣列值，此處parts不會被更動
+      //console.log("tmp: "+tmp)
+      cmd.apply(null, tmp);
+      //執行cmd, 同時帶入對應的參數
+    } else {
+      chat(msg);
+      //執行cmd, 同時帶入對應的參數
+    }
+  }
+}
+
+//client端的send按鈕發送事件
+send.onclick = function (e) {
+  handleMessageEvent()
+}
+//client端的enter鍵發送事件
+text.onkeydown = function (e) {
+    if (e.keyCode === 13) {
+        handleMessageEvent()
+    }
+}
+
+//client端的滑鼠移動事件
+window.onmousemove = function (e) {
+  if (myid > -1) {  //iam初始化完成才開始更新
+    set(myid, fish_id, e.pageX+1, e.pageY+1);
+    ws.send(["/set", fish_id, e.pageX+1, e.pageY+1].join(" ")); //供mrouter.HandleMessage使用，座標播送給其他client
+  }
+}
+
+function iam(id, ...total) {
+  total_id = total;
+  total_id[fish_id]++; 
+  //console.log("myid: "+myid+", total: "+total_id)
+  /*以亂數建立起myfish的編號，並且將對應編號加入total的計數*/
+  myfish = fish[fish_id] + total_id[fish_id] +"號" ;//0~3
+  fish_img = fishPhotos[fish_id];
+  //console.log("myfish: "+myfish)
+  //console.log("total " + total_id.join(" "))
+  myid = id;
+  ws.send("/total " + total_id.join(" ")); //供mrouter.HandleMessage使用，魚種數量播送給其他client
+  //console.log("id build: "+ myid + "_" + fish_id)
+}
+
+function set(id, fid, x, y) {
+  var node = document.getElementById("gopher-" + id);
+  if (!node) { //建立圖形物件
+    //var id_index = parseInt(id, 10)+1;
+    node = document.createElement("div");
+    document.body.appendChild(node);
+    node.className = "gopher";
+    //node.style.zIndex = id_index.toString();
+    node.id = "gopher-" + id;
+    node.style.backgroundImage = "url('/assets/FISH/" + fid + ".png')" 
+    //console.log("url from other build: "+ id + "_" + fid)
+  }
+  node.style.left = x + "px";
+  node.style.top = y + "px";
+}
+
+function dis(id) {
+  var node = document.getElementById("gopher-" + id);
+  if (node) {
+    document.body.removeChild(node); //刪除圖形物件
+  }
+}
+
+function chat(input) {
+  var m = JSON.parse(input.data)
+  block_id.forEach(function(value) {
+    //console.log("test value= "+ value)
+    if(value == m.id) {
+      //console.log("already block: "+m.id)
+      m = null;
+    }
+  })
+  if(!m) return;
+  var msg = ""
+  switch (m.event) {
+      case EVENT_MESSAGE:
+          if (m.name == myfish) {
+              msg = getMessage(m.name, m.photo, RIGHT, m.content);
+          } else {
+              msg = getMessage(m.name, m.photo, LEFT, m.content);
+          }
+          break;
+      case EVENT_OTHER:
+              msg = getEventMessage(m.name + m.content)
+          break;
+  }
+  insertMsg(msg, chatroom[0]);
+  console.log("<" + m.id + "> " + m.name +  " : " + m.content)
+}
+
+function handleMessageEvent() {
+    var t = String(text.value);
+    if(t == "") return;
+    if(t.substring(0,7)==="/block ") {
+      var rlt = /\d+/.exec(t.substring(7))
+      //console.log("rlt= "+rlt)
+      block_id.push(rlt);
+      //console.log("block: "+block_id)
+      text.value = "";
+      return;
+    }
+    ws.send(JSON.stringify({
+        "event": "message",
+        "id" : myid,
+        "photo": fish_img,
+        "name": myfish,
+        "content": text.value
+    }));
+    text.value = "";
+}
+
+function block(id) {
+  block_id.push(id);
+}
+
+function getEventMessage(msg) {
+    var msg = `<div class="msg-left">${msg}</div>`
+    return msg
+}
+
+function getMessage(name, img, side, text) {
+    const d = new Date()
+    //   Simple solution for small apps
+    var msg = `
+    <div class="msg ${side}-msg">
+      <div class="msg-img" style="background-image: url(${img})"></div>
+
+      <div class="msg-bubble" style="z-index:9999;positon:absolute">
+        <div class="msg-info">
+          <div class="msg-info-name">${name}</div>
+          <div class="msg-info-time">${d.getHours()}:${d.getMinutes()}</div>
+        </div>
+
+        <div class="msg-text" style="word-wrap:break-word;">${text}</div>
+      </div>
+    </div>
+  `
+    return msg;
+}
+
+function insertMsg(msg, domObj) {
+    domObj.insertAdjacentHTML("beforeend", msg);
+    domObj.scrollTop += 500;
+}
+</script>
+</body>
+</html>
